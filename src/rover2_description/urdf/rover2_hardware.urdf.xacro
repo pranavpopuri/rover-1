@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rover2">
+
+  <!--
+    Rover2 Hardware URDF
+    This file combines the base robot description with ros2_control hardware interface.
+    Use this for the real robot on Raspberry Pi 5.
+  -->
+
+  <!-- Include base robot description -->
+  <xacro:include filename="$(find rover2_description)/urdf/rover2.urdf.xacro"/>
+
+  <!-- Include ros2_control hardware interface -->
+  <xacro:include filename="$(find rover2_description)/urdf/rover2.ros2_control.xacro"/>
+
+</robot>

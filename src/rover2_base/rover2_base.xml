@@ -1,0 +1,9 @@
+<library path="rover2_hardware">
+  <class name="rover2_base/Rover2Hardware"
+         type="rover2_base::Rover2Hardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Hardware interface for Viam Rover 2 (Pi 5 GPIO motors and encoders)
+    </description>
+  </class>
+</library>

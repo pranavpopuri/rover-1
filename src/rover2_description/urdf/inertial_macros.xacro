@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Inertia calculation macros for common shapes -->
+
+  <!-- Box inertia: mass m, dimensions x, y, z -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(m/12)*(y*y+z*z)}" ixy="0.0" ixz="0.0"
+               iyy="${(m/12)*(x*x+z*z)}" iyz="0.0"
+               izz="${(m/12)*(x*x+y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Cylinder inertia: mass m, radius r, length h (along z-axis) -->
+  <xacro:macro name="cylinder_inertia" params="m r h">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(m/12)*(3*r*r+h*h)}" ixy="0.0" ixz="0.0"
+               iyy="${(m/12)*(3*r*r+h*h)}" iyz="0.0"
+               izz="${(m/2)*r*r}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Sphere inertia: mass m, radius r -->
+  <xacro:macro name="sphere_inertia" params="m r">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(2/5)*m*r*r}" ixy="0.0" ixz="0.0"
+               iyy="${(2/5)*m*r*r}" iyz="0.0"
+               izz="${(2/5)*m*r*r}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Box inertia with origin offset -->
+  <xacro:macro name="box_inertia_with_origin" params="m x y z ox oy oz">
+    <inertial>
+      <mass value="${m}"/>
+      <origin xyz="${ox} ${oy} ${oz}" rpy="0 0 0"/>
+      <inertia ixx="${(m/12)*(y*y+z*z)}" ixy="0.0" ixz="0.0"
+               iyy="${(m/12)*(x*x+z*z)}" iyz="0.0"
+               izz="${(m/12)*(x*x+y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Cylinder inertia with origin offset -->
+  <xacro:macro name="cylinder_inertia_with_origin" params="m r h ox oy oz">
+    <inertial>
+      <mass value="${m}"/>
+      <origin xyz="${ox} ${oy} ${oz}" rpy="0 0 0"/>
+      <inertia ixx="${(m/12)*(3*r*r+h*h)}" ixy="0.0" ixz="0.0"
+               iyy="${(m/12)*(3*r*r+h*h)}" iyz="0.0"
+               izz="${(m/2)*r*r}"/>
+    </inertial>
+  </xacro:macro>
+
+</robot>

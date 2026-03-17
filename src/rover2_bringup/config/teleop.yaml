@@ -1,0 +1,27 @@
+# Teleop twist keyboard parameters
+# These are the default key bindings and speeds
+
+teleop_twist_keyboard:
+  ros__parameters:
+    # Speed settings
+    speed: 0.5          # Linear velocity (m/s)
+    turn: 1.0           # Angular velocity (rad/s)
+
+    # Speed change increments
+    speed_limit: 1.0    # Maximum linear speed
+    turn_limit: 2.0     # Maximum angular speed
+
+    # Key repeat rate
+    repeat_rate: 10.0   # Hz
+
+# Note: teleop_twist_keyboard uses these default key bindings:
+#   Moving around:
+#      u    i    o
+#      j    k    l
+#      m    ,    .
+#
+#   q/z : increase/decrease max speeds by 10%
+#   w/x : increase/decrease only linear speed by 10%
+#   e/c : increase/decrease only angular speed by 10%
+#
+#   CTRL-C to quit
