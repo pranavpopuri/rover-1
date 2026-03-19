@@ -13,7 +13,7 @@ import os
 import xacro
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, TimerAction
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
@@ -49,6 +49,7 @@ def generate_launch_description():
     )
 
     # ros2_control controller manager
+    # Controllers are auto-loaded and activated from the YAML config
     controller_manager = Node(
         package='controller_manager',
         executable='ros2_control_node',
@@ -59,24 +60,21 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Spawn joint_state_broadcaster
+    # Spawn controllers (delayed to let controller_manager initialize)
     joint_state_broadcaster_spawner = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['joint_state_broadcaster',
                    '-c', '/controller_manager',
-                   '-p', controller_config,
                    '--controller-manager-timeout', '30'],
         output='screen',
     )
 
-    # Spawn diff_drive_controller (after joint_state_broadcaster is ready)
     diff_drive_spawner = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['diff_drive_controller',
                    '-c', '/controller_manager',
-                   '-p', controller_config,
                    '--controller-manager-timeout', '30'],
         output='screen',
     )

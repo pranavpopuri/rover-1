@@ -58,6 +58,10 @@ diff_drive_controller:
 
     # Feedback configuration
     position_feedback: true
+    # Set open_loop to false for real hardware (uses encoder feedback)
+    # Mock hardware doesn't integrate position, so odom stays at zero in mock mode.
+    # This is expected — the pipeline test confirms controllers load, topics publish,
+    # and cmd_vel is received. Real encoders will provide actual position feedback.
     open_loop: false
 
     # Topic remapping (Jazzy namespaces by default)

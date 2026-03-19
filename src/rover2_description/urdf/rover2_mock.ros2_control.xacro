@@ -13,6 +13,7 @@
       <plugin>mock_components/GenericSystem</plugin>
       <param name="mock_sensor_commands">false</param>
       <param name="state_following_offset">0.0</param>
+      <param name="calculate_dynamics">true</param>
     </hardware>
 
     <!-- Left wheel joint -->
