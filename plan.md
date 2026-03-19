@@ -2,9 +2,9 @@
 
 ## Overview
 
-Migrate Viam Rover 2 from Viam middleware to ROS2 Humble, creating a complete ros2_control-based differential drive platform with IMU, camera, power monitoring, and Gazebo simulation support.
+Migrate Viam Rover 2 from Viam middleware to ROS2 Jazzy, running entirely on the Raspberry Pi 5. Development proceeds in two stages: first get simulation working on the Pi, then deploy to real hardware.
 
-**Target System**: Raspberry Pi 5 + ROS2 Humble + Gazebo
+**Target System**: Raspberry Pi 5 + Ubuntu 24.04 + ROS2 Jazzy + Gazebo
 
 ---
 
@@ -50,367 +50,154 @@ Migrate Viam Rover 2 from Viam middleware to ROS2 Humble, creating a complete ro
 
 ---
 
-## Responsibilities
+## What Exists Already
 
-### What Claude Will Create
+The following packages have been written and need to be built and tested:
 
-| Deliverable | Description |
-|-------------|-------------|
-| **rover2_base/** | C++ ros2_control hardware interface for motors/encoders |
-| **rover2_description/** | Complete URDF/Xacro with collision, inertia, TF |
-| **rover2_bringup/** | Launch files and config for real robot |
-| **rover2_gazebo/** | Simulation launch, world file, Gazebo plugins |
-| **rover2_sensors/** | Python node for INA219 power monitoring |
-| **rover2_msgs/** | Custom message definitions (if needed) |
-| **scripts/hardware_tests/** | Standalone Python scripts to test GPIO, encoders, I2C |
-| **scripts/setup_pi5.sh** | Automated ROS2 Humble installation script for Pi 5 |
-| **Documentation** | README with build/run instructions |
-
-### What You Need To Do
-
-#### On Mac (One-Time Setup)
-| Task | How |
-|------|-----|
-| Install ROS2 Humble | Docker: `docker pull osrf/ros:humble-desktop` OR Robostack conda |
-| Clone this repo | Already done |
-
-#### On Mac (Each Development Session)
-| Task | How |
-|------|-----|
-| Build packages | `colcon build --symlink-install && source install/setup.bash` |
-| Run simulation | `ros2 launch rover2_bringup simulation.launch.py` |
-| Test with teleop | `ros2 run teleop_twist_keyboard teleop_twist_keyboard` |
-
-#### On Pi 5 (One-Time Setup)
-| Task | How |
-|------|-----|
-| Install Ubuntu 22.04 | Raspberry Pi Imager → Ubuntu Server 22.04 (64-bit) |
-| Run setup script | `./scripts/setup_pi5.sh` (installs ROS2 + dependencies) |
-| Enable I2C | `sudo raspi-config` → Interface Options → I2C → Enable |
-| Add GPIO permissions | `sudo usermod -aG gpio $USER` then logout/login |
-| Clone this repo | `git clone <repo-url>` |
-
-#### On Pi 5 (Hardware Verification - Before ROS2)
-| Task | How | What to Check |
-|------|-----|---------------|
-| Test motors | `python3 scripts/hardware_tests/test_motors.py` | Wheels spin correct direction |
-| Test encoders | `python3 scripts/hardware_tests/test_encoders.py` | ~1992 ticks per wheel rotation |
-| Test I2C | `i2cdetect -y 1` | Shows 0x40 and 0x68 |
-| Test IMU | `python3 scripts/hardware_tests/test_imu.py` | Reasonable accel/gyro values |
-
-#### On Pi 5 (Running the Robot)
-| Task | How |
-|------|-----|
-| Build packages | `colcon build --symlink-install && source install/setup.bash` |
-| Launch robot | `ros2 launch rover2_bringup robot.launch.py` |
-| Drive with teleop | `ros2 run teleop_twist_keyboard teleop_twist_keyboard` |
-
-#### Physical Tasks (Cannot Be Automated)
-| Task | When | Notes |
-|------|------|-------|
-| Confirm motor direction | During `test_motors.py` | If wrong, swap A/B pins in config |
-| Rotate wheels for encoder test | During `test_encoders.py` | Count should reach ~1992 per rotation |
-| Odometry calibration | After full integration | Drive 1m, measure actual, adjust wheel_radius |
-| IMU calibration | At robot startup | Keep robot stationary for 5 seconds |
+| Package | Contents | Status |
+|---------|----------|--------|
+| **rover2_description/** | URDF/Xacro (base, mock, hardware variants), materials, inertia macros, RViz config, view_robot launch | Written, untested |
+| **rover2_base/** | C++ ros2_control hardware interface (rover2_hardware, gpio_motor, gpio_encoder), controller config, plugin export | Written, untested |
+| **rover2_bringup/** | Launch files (robot, mock hardware, teleop), teleop config | Written, untested |
+| **rover2_sensors/** | INA219 power monitor Python node, sensor config, sensor launch | Written, untested |
+| **scripts/hardware_tests/** | Standalone test scripts for motors, encoders, I2C, IMU, power | Written, untested |
+| **scripts/setup_pi5.sh** | Automated Pi 5 setup (installs ROS2 Jazzy + deps) | Written, untested |
 
 ---
 
 ## Development Workflow
 
-**Two-Machine Setup:**
-- **Mac (Development)**: Build packages, run Gazebo simulation, iterate on code
-- **Pi 5 (Hardware)**: Run real robot, hardware validation tests
+**Single-Machine Setup — everything runs on the Raspberry Pi 5.**
 
-**Incremental Verification Strategy:**
-1. Simulation-first development on Mac
-2. Hardware test scripts to verify GPIO, encoders, I2C before full integration
-3. Same ROS2 topics in sim and real for seamless transition
+1. Get mock hardware mode working on the Pi (tests control pipeline without GPIO or a simulator)
+2. Validate all ROS2 topics and TF frames with mock hardware
+3. Run hardware test scripts to verify GPIO, encoders, I2C
+4. Switch from mock hardware to real hardware
+5. Calibrate odometry and sensors on real hardware
 
 ---
 
-## Package Structure
+## Safety Precautions
 
-```
-rover-1/  # This repo
-├── rover2_base/                 # C++ hardware interface (ros2_control)
-│   ├── include/rover2_base/
-│   │   ├── l298n_driver.hpp     # L298N motor abstraction
-│   │   ├── gpio_encoder.hpp     # Encoder reader via lgpio
-│   │   └── rover2_hardware.hpp  # ros2_control SystemInterface
-│   ├── src/
-│   │   ├── l298n_driver.cpp
-│   │   ├── gpio_encoder.cpp
-│   │   └── rover2_hardware.cpp
-│   ├── config/
-│   │   └── rover2_controllers.yaml
-│   └── rover2_base.xml          # Plugin export
-│
-├── rover2_description/          # URDF, meshes, visualization
-│   ├── urdf/
-│   │   ├── rover2.urdf.xacro
-│   │   ├── rover2.ros2_control.xacro
-│   │   └── rover2.gazebo.xacro
-│   ├── meshes/                  # STL files (from Viam CAD)
-│   ├── rviz/rover2.rviz
-│   └── launch/view_robot.launch.py
-│
-├── rover2_bringup/              # Launch files and configs
-│   ├── launch/
-│   │   ├── robot.launch.py      # Full robot bringup
-│   │   ├── simulation.launch.py # Gazebo simulation
-│   │   └── sensors.launch.py    # IMU + camera
-│   └── config/
-│       ├── mpu6050.yaml
-│       ├── camera.yaml
-│       └── ina219.yaml
-│
-├── rover2_gazebo/               # Simulation support
-│   ├── worlds/
-│   │   └── rover2_world.sdf
-│   └── launch/
-│       └── gazebo.launch.py
-│
-├── rover2_sensors/              # Python sensor nodes
-│   ├── rover2_sensors/
-│   │   └── ina219_node.py       # Power monitor
-│   └── setup.py
-│
-└── rover2_msgs/                 # Custom messages (optional)
-    └── msg/BatteryStatus.msg
-```
+**Read this before starting any phase involving hardware.**
+
+### Power Sources
+
+The Pi has two mutually exclusive power sources:
+
+| Source | How | When to Use |
+|--------|-----|-------------|
+| **USB-C wall adapter** | Plugged into Pi's USB-C port | Phases 1-2 (setup, simulation) |
+| **Robot battery** | Via GPIO ribbon cable from motor driver board | Phase 3 onward (hardware testing, driving) |
+
+**CRITICAL: Never connect both at the same time. Having the USB-C adapter plugged in while the ribbon cable is connected will brick the robot.**
+
+- The ribbon cable carries both power (battery → Pi) and GPIO signals (motors, encoders, I2C sensors)
+- When on battery power, the Pi will brown out if voltage drops too low — always check voltage before running motors
+- When switching power sources, **always shut down the Pi first** (`sudo shutdown now`), then disconnect the old source, connect the new source, and power on
+
+### SD Card Protection
+
+- **Back up the SD card** before starting Phase 1. If a brownout corrupts the filesystem, you can re-flash instead of starting from scratch:
+  ```bash
+  # From another machine, with the SD card inserted:
+  sudo dd if=/dev/sdX of=rover2-backup.img bs=4M status=progress
+  ```
+- **Shut down cleanly** (`sudo shutdown now`) before disconnecting power. Never just pull the plug.
+
+### GPIO & Wiring Safety
+
+- **Visually verify all wiring matches the GPIO pin table** before connecting the ribbon cable for the first time. A miswired GPIO pin can short the Pi's 3.3V rail and permanently damage it.
+- If anything smells hot or a motor doesn't spin, **disconnect power immediately** — don't keep retrying.
+
+### Motor Safety
+
+- **Keep your hand on the power switch** during first motor tests (Phase 3b and 4b). The software emergency stop (`cmd_vel_timeout`) only works if the ROS2 node is running — if the node crashes, motors may keep spinning.
+- **Always test on blocks first** (wheels off the ground) before driving on the floor.
+- Do not stall motors (hold wheels still while powered) for more than a few seconds — this can burn out the motor driver.
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Project Setup & URDF (Days 1-2)
+### Phase 1: Pi 5 Setup & Build
+
+**Power: USB-C wall adapter. Ribbon cable disconnected.**
+
+**Goal:** Get the ROS2 workspace compiling on the Pi.
+
+**Prerequisites:**
+- Back up the SD card (see Safety Precautions above)
 
 **Tasks:**
-1. Create ROS2 workspace and all package skeletons
-2. Build complete URDF with:
-   - Base link, chassis, wheels, caster
-   - IMU link, camera link with optical frame
-   - Collision and inertia properties
-3. Create ros2_control hardware tag in URDF
-4. Test visualization in RViz2
-
-**Deliverables:**
-- All packages compile
-- Robot visible in RViz with correct TF tree
-
-**Critical Files:**
-- `rover2_description/urdf/rover2.urdf.xacro`
-- `rover2_description/urdf/rover2.ros2_control.xacro`
-
----
-
-### Phase 2: ros2_control Hardware Interface (Days 3-6)
-
-**Tasks:**
-1. Implement L298N driver class using lgpio (Pi 5 compatible)
-2. Implement GPIO encoder class with interrupt-based counting
-3. Create ros2_control SystemInterface:
-   - `on_init()`: Parse URDF parameters
-   - `on_configure()`: Initialize GPIO
-   - `on_activate()`: Start encoder counting
-   - `read()`: Get encoder positions/velocities
-   - `write()`: Send PWM to motors
-4. Configure diff_drive_controller
-5. Test with teleop_twist_keyboard
-
-**Key Configuration** (`rover2_controllers.yaml`):
-```yaml
-diff_drive_controller:
-  ros__parameters:
-    left_wheel_names: ["left_wheel_joint"]
-    right_wheel_names: ["right_wheel_joint"]
-    wheel_separation: 0.356    # 356 mm from Viam spec
-    wheel_radius: 0.06065      # 60.65 mm from Viam spec
-    publish_rate: 50.0
-    enable_odom_tf: true
-    linear.x.max_velocity: 0.76  # ~120 RPM * 0.381m circumference / 60
-    angular.z.max_velocity: 2.0
-```
-
-**Deliverables:**
-- Motors respond to /cmd_vel
-- Odometry publishes on /odom
-- TF: odom → base_link
-
-**Critical Files:**
-- `rover2_base/src/rover2_hardware.cpp`
-- `rover2_base/include/rover2_base/l298n_driver.hpp`
-- `rover2_base/config/rover2_controllers.yaml`
-
----
-
-### Phase 3: Sensor Integration (Days 7-8)
-
-**IMU (MPU6050):**
-- Use existing package: [ros2_mpu6050_driver](https://github.com/hiwad-aziz/ros2_mpu6050_driver)
-- Publishes: `/imu/data` (sensor_msgs/Imu)
-- Run calibration on startup
-
-**Camera:**
-- Use `usb_cam` package
-- Publishes: `/camera/image_raw`, `/camera/camera_info`
-- 720p @ 30fps
-
-**Power Monitor (Optional):**
-- Custom Python node for INA219
-- Publishes: `/battery_state` (sensor_msgs/BatteryState)
-
-**Deliverables:**
-- IMU data in RViz
-- Camera image streaming
-- Battery voltage monitoring
-
-**Critical Files:**
-- `rover2_bringup/config/mpu6050.yaml`
-- `rover2_bringup/config/camera.yaml`
-- `rover2_sensors/rover2_sensors/ina219_node.py`
-
----
-
-### Phase 4: Gazebo Simulation (Days 9-10)
-
-**Tasks:**
-1. Create Gazebo URDF plugins file
-2. Configure `gazebo_ros2_control` plugin
-3. Add differential drive plugin for simulation
-4. Create test world with obstacles
-5. Verify simulation matches real hardware behavior
-
-**Gazebo Plugins** (`rover2.gazebo.xacro`):
-```xml
-<gazebo>
-  <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
-    <parameters>$(find rover2_base)/config/rover2_controllers.yaml</parameters>
-  </plugin>
-</gazebo>
-
-<!-- IMU sensor plugin -->
-<gazebo reference="imu_link">
-  <sensor name="imu" type="imu">
-    <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
-      <ros><namespace>/</namespace></ros>
-      <topicName>/imu/data</topicName>
-    </plugin>
-  </sensor>
-</gazebo>
-
-<!-- Camera plugin -->
-<gazebo reference="camera_link">
-  <sensor type="camera" name="camera">
-    <camera><horizontal_fov>1.047</horizontal_fov>...</camera>
-    <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-      <cameraName>camera</cameraName>
-    </plugin>
-  </sensor>
-</gazebo>
-```
-
-**Deliverables:**
-- Working Gazebo simulation
-- Same ROS2 topics as real robot
-- Test environment for SLAM/nav development
-
-**Critical Files:**
-- `rover2_description/urdf/rover2.gazebo.xacro`
-- `rover2_gazebo/worlds/rover2_world.sdf`
-- `rover2_gazebo/launch/gazebo.launch.py`
-
----
-
-### Phase 5: Launch Files & Integration (Days 11-12)
-
-**Tasks:**
-1. Create modular launch files
-2. Add parameter files for all nodes
-3. Test full system integration
-4. Document startup procedures
-
-**Main Launch File** (`robot.launch.py`):
-- Loads robot_description
-- Starts controller_manager with hardware interface
-- Spawns diff_drive_controller and joint_state_broadcaster
-- Launches IMU, camera, power monitor nodes
-
-**Deliverables:**
-- Single command to launch entire robot
-- Separate launch for simulation vs hardware
-
-**Critical Files:**
-- `rover2_bringup/launch/robot.launch.py`
-- `rover2_bringup/launch/simulation.launch.py`
-
----
-
-### Phase 5.5: Hardware Verification Scripts (Pi 5 Only)
-
-**Purpose:** Verify hardware works BEFORE full ROS2 integration. Run these standalone Python scripts to validate GPIO, encoders, and I2C.
-
-**Scripts to Create** (`scripts/hardware_tests/`):
-
-1. **`test_motors.py`** - Spin each motor forward/backward
-   ```python
-   # Test left motor: PWM=26, A=19, B=13
-   # Test right motor: PWM=22, A=6, B=5
-   # Visual confirmation: wheels spin correct direction
-   ```
-
-2. **`test_encoders.py`** - Count encoder pulses while manually rotating wheels
-   ```python
-   # Left encoder: GPIO 20
-   # Right encoder: GPIO 21
-   # Expected: ~1992 ticks per full rotation
-   ```
-
-3. **`test_i2c.py`** - Verify IMU and power sensor respond
+1. Run `scripts/setup_pi5.sh` to install ROS2 Jazzy and dependencies
+2. Reboot, verify ROS2 is sourced (`ros2 --help`)
+3. Build the workspace:
    ```bash
-   i2cdetect -y 1  # Should show 0x40 (INA219) and 0x68 (MPU6050)
+   cd ~/github/rover-1
+   colcon build --symlink-install
+   source install/setup.bash
+   ```
+4. Fix any compile errors (missing deps, API changes between Humble→Jazzy)
+
+**Deliverables:**
+- All packages compile cleanly on the Pi
+- `ros2 pkg list | grep rover2` shows all packages
+
+**Potential Issues:**
+- C++ code may need minor API adjustments for Jazzy
+- `liblgpio` C library may not be in Ubuntu 24.04 repos — the build will fall back to mock GPIO mode, which is fine for Phase 2
+
+---
+
+### Phase 2: Mock Hardware Testing
+
+**Power: USB-C wall adapter. Ribbon cable disconnected.**
+
+**Goal:** Verify the entire ros2_control pipeline works using mock hardware — no GPIO, no simulator, no GPU needed. Mock hardware mirrors velocity commands to state feedback, so the controllers, odometry, and TF all function as if a real robot were moving.
+
+**Tasks:**
+1. Launch mock hardware:
+   ```bash
+   ros2 launch rover2_bringup simulation.launch.py
+   ```
+2. Verify controllers loaded:
+   ```bash
+   ros2 control list_controllers
+   # Should show diff_drive_controller [active] and joint_state_broadcaster [active]
+   ```
+3. Verify ROS2 topics are publishing:
+   ```bash
+   ros2 topic list
+   ros2 topic echo /diff_drive_controller/odom          # Should show zeros until cmd_vel is sent
+   ros2 topic echo /joint_states  # Should show wheel positions
+   ```
+4. Drive with teleop in another terminal:
+   ```bash
+   ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel
+   ```
+5. Confirm odometry updates when driving:
+   ```bash
+   ros2 topic echo /diff_drive_controller/odom
+   # Position should change as you send cmd_vel commands
+   ```
+6. Verify TF tree:
+   ```bash
+   ros2 run tf2_tools view_frames
+   ```
+7. Optionally view in RViz (if display available):
+   ```bash
+   ros2 launch rover2_bringup simulation.launch.py rviz:=true
    ```
 
-4. **`test_imu.py`** - Read MPU6050 acceleration/gyro values
+**Deliverables:**
+- [ ] `diff_drive_controller` and `joint_state_broadcaster` both active
+- [ ] `/diff_drive_controller/cmd_vel` commands produce odometry changes on `/diff_drive_controller/odom`
+- [ ] `/joint_states` shows wheel positions changing
+- [ ] TF tree matches expected frame hierarchy
+- [ ] RViz shows robot with wheels spinning (if display available)
 
-5. **`test_power.py`** - Read battery voltage/current from INA219
-
-**Verification Checkpoints:**
-- [ ] Motors spin in correct direction
-- [ ] Encoder ticks match expected count (~1992/rotation)
-- [ ] I2C devices detected at correct addresses
-- [ ] IMU returns reasonable accel/gyro values
-- [ ] Power sensor shows battery voltage
-
----
-
-### Phase 6: Testing & Calibration (Days 13-14)
-
-**Hardware Tests:**
-1. Verify each GPIO pin function
-2. Test encoder accuracy (drive 1m, measure actual distance)
-3. Calibrate wheel_separation and wheel_radius
-4. Run IMU calibration routine
-5. Verify camera intrinsics
-
-**Integration Tests:**
-1. Drive square pattern, measure odometry drift
-2. Compare simulation vs real behavior
-3. Test emergency stop behavior
-4. Verify all TF frames correct
-
-**Odometry Calibration Procedure:**
-```bash
-# Mark 1 meter on floor
-ros2 topic pub /cmd_vel geometry_msgs/Twist "{linear: {x: 0.1}}"
-# Measure actual distance traveled
-# Adjust wheel_radius = wheel_radius * (commanded / actual)
-```
-
----
-
-## TF Tree
-
+**Expected TF Tree:**
 ```
 odom
 └── base_link
@@ -419,71 +206,382 @@ odom
     │   ├── imu_link
     │   ├── camera_link
     │   │   └── camera_optical_frame
-    │   └── caster_link
+    │   └── caster_mount
+    │       └── caster_wheel
     ├── left_wheel
     └── right_wheel
 ```
 
 ---
 
+### Phase 3: Hardware Verification (Pre-ROS2)
+
+**Power: Robot battery via ribbon cable. USB-C wall adapter DISCONNECTED.**
+
+**Goal:** Verify all hardware works using standalone scripts and physically confirm the software's assumptions match the real robot.
+
+#### Switching to robot power (one-time)
+
+This is the first phase that requires the ribbon cable. Follow this procedure exactly:
+
+1. `sudo shutdown now` — wait for Pi to fully power off
+2. Unplug the USB-C wall adapter
+3. Visually verify the ribbon cable wiring matches the GPIO pin table (see Safety Precautions)
+4. Connect the ribbon cable to the Pi's GPIO header
+5. Turn on the robot's battery power
+6. Pi should boot from battery power via the ribbon cable
+7. SSH back into the Pi
+
+**From this point forward, the Pi is always powered by the robot battery via the ribbon cable. Do not reconnect the USB-C adapter without first shutting down and disconnecting the ribbon cable.**
+
+#### 3a: Connectivity & Sensor Check
+
+| Step | Command | What to Check |
+|------|---------|---------------|
+| 1. Verify I2C | `python3 scripts/hardware_tests/test_i2c.py` | Devices at 0x40 (INA219) and 0x68 (MPU6050) |
+| 2. Test IMU | `python3 scripts/hardware_tests/test_imu.py` | Reasonable accel/gyro values |
+| 3. Test power sensor | `python3 scripts/hardware_tests/test_power.py` | Battery voltage reads correctly |
+
+**Physical verification:**
+- [ ] Tilt robot forward — IMU X-axis accel increases
+- [ ] Tilt robot left — IMU Y-axis accel increases
+- [ ] IMU Z-axis reads ~9.8 m/s² when stationary (gravity)
+- [ ] Battery voltage matches multimeter reading (within 0.2V)
+
+#### 3b: Motor & Encoder Check
+
+**Before running any motor test:**
+1. Visually verify all motor and encoder wiring matches the GPIO pin table (see Safety Precautions)
+2. Confirm battery voltage is above 13.0V (from step 3 in 3a)
+3. Place the robot on blocks so wheels are off the ground
+4. Keep your hand on the power switch
+
+| Step | Command | What to Check |
+|------|---------|---------------|
+| 4. Test motors | `python3 scripts/hardware_tests/test_motors.py` | Wheels spin |
+| 5. Test encoders | `python3 scripts/hardware_tests/test_encoders.py` | Ticks count up |
+
+**Physical verification (robot on blocks, wheels off ground):**
+- [ ] "Forward" command spins both wheels so the robot would move forward — if not, swap A/B pins in config and re-test
+- [ ] Left and right motors spin at roughly the same speed at the same PWM
+- [ ] Encoder ticks per full wheel rotation: record actual count (expected ~1992). If significantly different, update `encoder_ticks_per_rotation` in URDF and controller config
+
+#### 3c: Measure & Reconcile Physical Dimensions
+
+The URDF and controller config assume dimensions from the Viam spec sheet. Measure the actual robot and update configs if they differ.
+
+| Parameter | Spec Value | How to Measure | Config to Update |
+|-----------|-----------|----------------|------------------|
+| Wheel diameter | 121.3 mm | Calipers on wheel | `wheel_radius` in `rover2_controllers.yaml` and URDF |
+| Wheel separation | 356 mm | Center-to-center distance between left and right wheel contact patches | `wheel_separation` in `rover2_controllers.yaml` and URDF |
+| Encoder ticks/rotation | 1992 | Recorded from step 3b | `encoder_ticks_per_rotation` in `rover2.ros2_control.xacro` |
+
+**Deliverables:**
+- [ ] All I2C devices respond
+- [ ] IMU axes orientation confirmed physically
+- [ ] Motors spin in correct direction
+- [ ] Encoder ticks/rotation recorded and config updated if needed
+- [ ] Wheel diameter and separation measured and config updated if needed
+
+---
+
+### Phase 4: Real Hardware Bringup
+
+**Power: Robot battery via ribbon cable.**
+
+**Goal:** Run the rover on real hardware using ros2_control and verify basic motion.
+
+#### 4a: Launch & Verify Controllers
+
+1. Launch the real robot:
+   ```bash
+   ros2 launch rover2_bringup robot.launch.py
+   ```
+2. Verify controller_manager loads the hardware interface:
+   ```bash
+   ros2 control list_hardware_interfaces
+   ros2 control list_controllers
+   ```
+3. Confirm `diff_drive_controller` is in `active` state and `joint_state_broadcaster` is running
+
+#### 4b: Stationary Checks (robot on blocks)
+
+**Before proceeding:** Confirm battery voltage is above 13.0V. Keep your hand on the power switch.
+
+Test with wheels off the ground before driving on the floor:
+
+1. Send a low-speed forward command:
+   ```bash
+   ros2 topic pub --once /diff_drive_controller/cmd_vel geometry_msgs/Twist "{linear: {x: 0.1}}"
+   ```
+2. Verify:
+   - [ ] Both wheels spin forward
+   - [ ] `/diff_drive_controller/odom` position increases in X
+   - [ ] `/joint_states` shows both wheel positions changing
+3. Send a rotation command:
+   ```bash
+   ros2 topic pub --once /diff_drive_controller/cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}"
+   ```
+4. Verify:
+   - [ ] Wheels spin in opposite directions
+   - [ ] `/diff_drive_controller/odom` yaw changes
+
+#### 4c: First Drive (on the ground)
+
+1. Confirm battery voltage is above 13.0V
+2. Place robot on flat floor with plenty of space to move, away from edges/stairs
+3. Keep your hand near the power switch for the first few commands
+4. Drive with teleop at low speed:
+   ```bash
+   ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel
+   ```
+5. Verify:
+   - [ ] Robot drives forward when expected
+   - [ ] Robot turns left/right correctly
+   - [ ] Robot stops when key is released (within `cmd_vel_timeout`)
+   - [ ] No erratic behavior or unexpected jerking
+
+**Deliverables:**
+- [ ] Controllers load and activate without errors
+- [ ] Wheels respond correctly to `/diff_drive_controller/cmd_vel` (verified on blocks first)
+- [ ] Odometry direction matches physical motion
+- [ ] Robot drives safely on the ground with teleop
+
+---
+
+### Phase 5: Sensor Integration
+
+**Power: Robot battery via ribbon cable.**
+
+**Goal:** Add IMU, camera, and power monitor as ROS2 nodes and verify each produces correct data.
+
+#### 5a: IMU (MPU6050)
+
+- Clone and build `ros2_mpu6050_driver`:
+  ```bash
+  git clone https://github.com/hiwad-aziz/ros2_mpu6050_driver src/ros2_mpu6050_driver
+  colcon build --symlink-install
+  ```
+- Publishes: `/imu/data` (sensor_msgs/Imu)
+
+**Physical verification:**
+- [ ] `/imu/data` publishes at expected rate (~100 Hz)
+- [ ] With robot stationary, linear_acceleration.z ≈ 9.8
+- [ ] Tilt robot — acceleration values change in correct axis
+- [ ] Rotate robot by hand — angular velocity values respond
+
+#### 5b: Camera
+
+- Use `usb_cam` package (installed by setup script)
+- Publishes: `/camera/image_raw`, `/camera/camera_info`
+
+**Physical verification:**
+- [ ] Image topic publishes at expected rate
+- [ ] View image (e.g., `ros2 run rqt_image_view rqt_image_view` or save a frame) — image is right-side up and not mirrored
+- [ ] Camera is pointed in the direction the URDF `camera_link` frame indicates (forward)
+
+#### 5c: Power Monitor
+
+- Already implemented in `rover2_sensors`
+- Publishes: `/battery_state` (sensor_msgs/BatteryState)
+
+**Physical verification:**
+- [ ] Voltage reading matches multimeter (within 0.2V)
+- [ ] Current reading increases when motors are running
+- [ ] Low voltage warning triggers at correct threshold
+
+**Deliverables:**
+- [ ] All three sensor nodes run simultaneously without errors
+- [ ] Data from each sensor is physically verified as correct
+- [ ] Sensor data is visible in RViz
+
+---
+
+### Phase 6: Calibration & Validation
+
+**Power: Robot battery via ribbon cable.**
+
+**Goal:** Tune odometry parameters so software matches physical reality, then run integration tests.
+
+#### 6a: Linear Calibration
+
+1. Mark a 1m line on the floor
+2. Command the robot to drive forward:
+   ```bash
+   ros2 topic pub /diff_drive_controller/cmd_vel geometry_msgs/Twist "{linear: {x: 0.1}}"
+   ```
+3. Stop when odometry reports 1m traveled
+4. Measure actual distance with tape measure
+5. Adjust: `wheel_radius = wheel_radius * (odometry_distance / actual_distance)`
+6. Rebuild, repeat until error < 2%
+
+- [ ] Robot reports 1m, actually travels 1m (±2 cm)
+
+#### 6b: Rotational Calibration
+
+1. Mark robot's heading on the floor
+2. Command a 360° rotation:
+   ```bash
+   ros2 topic pub /diff_drive_controller/cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}"
+   ```
+3. Stop when odometry reports 360° (2π rad)
+4. Measure actual rotation
+5. Adjust: `wheel_separation = wheel_separation * (actual_angle / commanded_angle)`
+6. Rebuild, repeat until error < 5°
+
+- [ ] Robot reports 360°, actually rotates 360° (±5°)
+
+#### 6c: Integration Tests
+
+| Test | Procedure | Pass Criteria |
+|------|-----------|---------------|
+| Drive straight 2m | Command 0.2 m/s, stop at 2m odometry | Lateral drift < 5 cm |
+| Drive square (1m sides) | Four 1m straights with 90° turns | Returns within 10 cm of start |
+| Emergency stop | Drive forward, release keys | Stops within `cmd_vel_timeout` (0.5s) |
+| Mock vs real | Run same commands in mock hardware and on real hardware | Odometry values within 10% |
+| IMU + odometry agreement | Drive forward, check IMU shows ~0 angular velocity | No large disagreement |
+
+**Deliverables:**
+- [ ] Linear odometry accurate to ±2%
+- [ ] Rotational odometry accurate to ±5°
+- [ ] Square test returns within 10 cm of start
+- [ ] Emergency stop works reliably
+- [ ] Mock hardware and real hardware behavior agree within 10%
+
+---
+
+## Package Structure
+
+```
+rover-1/
+├── src/
+│   ├── rover2_base/                 # C++ hardware interface (ros2_control)
+│   │   ├── include/rover2_base/
+│   │   │   ├── rover2_hardware.hpp
+│   │   │   ├── gpio_motor.hpp
+│   │   │   ├── gpio_encoder.hpp
+│   │   │   └── visibility_control.h
+│   │   ├── src/
+│   │   │   ├── rover2_hardware.cpp
+│   │   │   ├── gpio_motor.cpp
+│   │   │   └── gpio_encoder.cpp
+│   │   ├── config/
+│   │   │   └── rover2_controllers.yaml
+│   │   └── rover2_base.xml
+│   │
+│   ├── rover2_description/          # URDF and visualization
+│   │   ├── urdf/
+│   │   │   ├── rover2.urdf.xacro             # Base robot geometry
+│   │   │   ├── rover2_hardware.urdf.xacro    # Hardware variant (real GPIO)
+│   │   │   ├── rover2_mock.urdf.xacro        # Mock variant (no hardware)
+│   │   │   ├── rover2.ros2_control.xacro     # Real hardware ros2_control config
+│   │   │   ├── rover2_mock.ros2_control.xacro # Mock hardware ros2_control config
+│   │   │   ├── materials.xacro
+│   │   │   └── inertial_macros.xacro
+│   │   ├── rviz/rover2.rviz
+│   │   └── launch/view_robot.launch.py
+│   │
+│   ├── rover2_bringup/              # Launch files and configs
+│   │   ├── launch/
+│   │   │   ├── robot.launch.py      # Real hardware launch
+│   │   │   ├── simulation.launch.py # Mock hardware launch
+│   │   │   └── teleop.launch.py
+│   │   └── config/
+│   │       └── teleop.yaml
+│   │
+│   └── rover2_sensors/              # Python sensor nodes
+│       ├── rover2_sensors/
+│       │   ├── __init__.py
+│       │   └── ina219_node.py
+│       ├── config/sensors.yaml
+│       ├── launch/sensors.launch.py
+│       └── setup.py
+│
+├── scripts/
+│   ├── setup_pi5.sh
+│   └── hardware_tests/
+│       ├── README.md
+│       ├── test_motors.py
+│       ├── test_encoders.py
+│       ├── test_i2c.py
+│       ├── test_imu.py
+│       └── test_power.py
+│
+└── plan.md
+```
+
+---
+
+## Key Configuration
+
+**diff_drive_controller** (`rover2_controllers.yaml`):
+```yaml
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names: ["left_wheel_joint"]
+    right_wheel_names: ["right_wheel_joint"]
+    wheel_separation: 0.356
+    wheel_radius: 0.06065
+    publish_rate: 50.0
+    enable_odom_tf: true
+    linear.x.max_velocity: 0.76
+    angular.z.max_velocity: 2.0
+```
+
+---
+
+## ROS2 Topics
+
+| Topic | Type | Source |
+|-------|------|--------|
+| `/diff_drive_controller/cmd_vel` | geometry_msgs/Twist | Teleop / nav2 |
+| `/diff_drive_controller/odom` | nav_msgs/Odometry | diff_drive_controller |
+| `/imu/data` | sensor_msgs/Imu | MPU6050 driver |
+| `/camera/image_raw` | sensor_msgs/Image | usb_cam |
+| `/camera/camera_info` | sensor_msgs/CameraInfo | usb_cam |
+| `/joint_states` | sensor_msgs/JointState | joint_state_broadcaster |
+| `/battery_state` | sensor_msgs/BatteryState | ina219_node |
+| `/tf` | tf2_msgs/TFMessage | robot_state_publisher |
+
+---
+
 ## Dependencies
 
-### Mac (Simulation Development)
-```bash
-# Install ROS2 Humble via Homebrew or Docker
-# Option 1: Docker (recommended for Mac)
-docker pull osrf/ros:humble-desktop
+### Pi 5 Setup (handled by `scripts/setup_pi5.sh`)
 
-# Option 2: Robostack (native conda environment)
-conda create -n ros_env python=3.10
-conda activate ros_env
-conda install -c conda-forge -c robostack-staging ros-humble-desktop
+**OS:** Ubuntu 24.04 (Noble)
+
+**ROS2 Jazzy:**
+```bash
+ros-jazzy-ros-base
+ros-jazzy-ros2-control
+ros-jazzy-ros2-controllers
+ros-jazzy-xacro
+ros-jazzy-robot-state-publisher
+ros-jazzy-joint-state-publisher
+ros-jazzy-usb-cam
+ros-jazzy-teleop-twist-keyboard
+python3-colcon-common-extensions
+python3-rosdep
 ```
 
-### Pi 5 (Hardware)
-
-**ROS2 Humble Installation:**
+**Optional (for RViz visualization):**
 ```bash
-# Ubuntu 22.04 on Pi 5
-sudo apt update && sudo apt install -y software-properties-common
-sudo add-apt-repository universe
-sudo apt update && sudo apt install -y curl
-
-# Add ROS2 repository
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
-
-# Install ROS2 Humble
-sudo apt update
-sudo apt install -y ros-humble-ros-base ros-humble-ros2-control ros-humble-ros2-controllers
+ros-jazzy-rviz2
+ros-jazzy-joint-state-publisher-gui
 ```
 
-**System Packages (Pi 5):**
+**Hardware:**
 ```bash
-sudo apt install -y \
-  ros-humble-xacro \
-  ros-humble-usb-cam \
-  ros-humble-teleop-twist-keyboard \
-  i2c-tools \
-  python3-lgpio \
-  python3-smbus2
+python3-lgpio
+python3-smbus2
+i2c-tools
+v4l-utils
 ```
 
-**Enable I2C:**
+**From Source:**
 ```bash
-sudo raspi-config  # Interface Options → I2C → Enable
-```
-
-**GPIO Permissions:**
-```bash
-sudo usermod -aG gpio $USER
-# Logout and login for changes to take effect
-```
-
-### Clone from Source
-```bash
-# MPU6050 driver (in this repo)
-cd /path/to/rover-1
+# MPU6050 driver
 git clone https://github.com/hiwad-aziz/ros2_mpu6050_driver src/ros2_mpu6050_driver
 ```
 
@@ -491,19 +589,50 @@ git clone https://github.com/hiwad-aziz/ros2_mpu6050_driver src/ros2_mpu6050_dri
 
 ## Pi 5 GPIO Notes
 
-The Raspberry Pi 5 uses a different GPIO library than Pi 4:
-- **Use `lgpio`** instead of `pigpio` (not compatible with Pi 5)
+- **Use `lgpio`** — `pigpio` is not compatible with Pi 5
 - Hardware PWM available on GPIO 12, 13, 18, 19
-- May need to run with elevated permissions for GPIO access
+- GPIO access requires `gpio` group membership:
+  ```bash
+  sudo usermod -aG gpio $USER
+  ```
+- The hardware interface has a mock mode (`HAS_LGPIO` compile flag) for testing without GPIO
+
+---
+
+## Quick Start
 
 ```bash
-# Add user to gpio group
-sudo usermod -aG gpio $USER
+# 1. Setup (one-time, USB-C power)
+./scripts/setup_pi5.sh
+sudo reboot
+
+# 2. Build
+cd ~/github/rover-1
+colcon build --symlink-install
+source install/setup.bash
+
+# 3. Test with mock hardware (USB-C power, no ribbon cable)
+ros2 launch rover2_bringup simulation.launch.py
+
+# 4. Teleop (another terminal)
+source ~/github/rover-1/install/setup.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel
+
+# 5. Switch to battery power (shutdown, unplug USB-C, connect ribbon cable, power on)
+
+# 6. Hardware tests
+python3 scripts/hardware_tests/test_power.py    # Check voltage first!
+python3 scripts/hardware_tests/test_i2c.py
+python3 scripts/hardware_tests/test_motors.py
+python3 scripts/hardware_tests/test_encoders.py
+
+# 7. Real hardware
+ros2 launch rover2_bringup robot.launch.py
 ```
 
 ---
 
-## Future Enhancements (Post-Migration)
+## Future Enhancements
 
 1. **SLAM**: Add `slam_toolbox` with RPLiDAR
 2. **Navigation**: Integrate `nav2` stack
@@ -513,67 +642,11 @@ sudo usermod -aG gpio $USER
 
 ---
 
-## Verification Checklist
-
-- [ ] All packages compile without errors
-- [ ] URDF loads correctly in RViz
-- [ ] TF tree shows expected frames
-- [ ] Motors respond to /cmd_vel commands
-- [ ] Odometry updates on /odom
-- [ ] IMU data on /imu/data
-- [ ] Camera image on /camera/image_raw
-- [ ] Simulation matches hardware behavior
-- [ ] Robot drives straight (no drift)
-- [ ] Rotation matches commanded angle
-
----
-
-## Quick Start Commands
-
-### Mac (Simulation)
-```bash
-# Build workspace
-cd /path/to/rover-1
-colcon build --symlink-install
-source install/setup.bash
-
-# Launch simulation
-ros2 launch rover2_bringup simulation.launch.py
-
-# Teleoperation (in another terminal)
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-
-# View in RViz
-ros2 launch rover2_description view_robot.launch.py
-```
-
-### Pi 5 (Hardware)
-```bash
-# Run hardware verification first
-cd /path/to/rover-1/scripts/hardware_tests
-python3 test_motors.py
-python3 test_encoders.py
-python3 test_i2c.py
-
-# Build workspace
-cd /path/to/rover-1
-colcon build --symlink-install
-source install/setup.bash
-
-# Launch real robot
-ros2 launch rover2_bringup robot.launch.py
-
-# Teleoperation (from Mac or Pi)
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
-
----
-
 ## Sources
 
 - [Viam Rover 2 Docs](https://docs.viam.com/dev/reference/try-viam/rover-resources/rover-tutorial/)
 - [Viam Rover 2 GitHub](https://github.com/viamrobotics/Viam-Rover-2)
-- [ros2_control Humble Docs](https://control.ros.org/humble/)
-- [diff_drive_controller](https://control.ros.org/humble/doc/ros2_controllers/diff_drive_controller/doc/userdoc.html)
+- [ros2_control Jazzy Docs](https://control.ros.org/jazzy/)
+- [diff_drive_controller](https://control.ros.org/jazzy/doc/ros2_controllers/diff_drive_controller/doc/userdoc.html)
 - [ros2_mpu6050_driver](https://github.com/hiwad-aziz/ros2_mpu6050_driver)
 - [lgpio Library (Pi 5)](https://abyz.me.uk/lg/py_lgpio.html)

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rover2">
+
+  <!--
+    Rover2 Mock Hardware URDF
+    Combines the base robot description with mock ros2_control interface.
+    Use this for testing the control pipeline without real hardware or a simulator.
+  -->
+
+  <!-- Include base robot description -->
+  <xacro:include filename="$(find rover2_description)/urdf/rover2.urdf.xacro"/>
+
+  <!-- Include mock ros2_control interface -->
+  <xacro:include filename="$(find rover2_description)/urdf/rover2_mock.ros2_control.xacro"/>
+
+</robot>

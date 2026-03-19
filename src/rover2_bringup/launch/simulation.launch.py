@@ -1,86 +1,115 @@
 #!/usr/bin/env python3
 """
-Main simulation launch file for Rover2.
-Launches Gazebo, robot state publisher, and optionally RViz and teleop.
+Mock hardware launch file for Rover2.
+Uses ros2_control mock_components/GenericSystem to test the full control
+pipeline (controllers, TF, odometry) without real hardware or a simulator.
 
 Usage:
     ros2 launch rover2_bringup simulation.launch.py
-    ros2 launch rover2_bringup simulation.launch.py rviz:=false
-    ros2 launch rover2_bringup simulation.launch.py world:=/path/to/custom.sdf
+    ros2 launch rover2_bringup simulation.launch.py rviz:=true
 """
 
 import os
+import xacro
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
     # Get package directories
-    pkg_rover2_gazebo = get_package_share_directory('rover2_gazebo')
+    pkg_description = get_package_share_directory('rover2_description')
+    pkg_base = get_package_share_directory('rover2_base')
+
+    # Paths
+    urdf_file = os.path.join(pkg_description, 'urdf', 'rover2_mock.urdf.xacro')
+    controller_config = os.path.join(pkg_base, 'config', 'rover2_controllers.yaml')
+    rviz_config = os.path.join(pkg_description, 'rviz', 'rover2.rviz')
+
+    # Process xacro
+    robot_description = xacro.process_file(urdf_file).toxml()
 
     # Launch arguments
-    use_sim_time = LaunchConfiguration('use_sim_time', default='true')
-    world = LaunchConfiguration('world')
-    gui = LaunchConfiguration('gui', default='true')
-    rviz = LaunchConfiguration('rviz', default='true')
-    teleop = LaunchConfiguration('teleop', default='false')
+    rviz = LaunchConfiguration('rviz', default='false')
 
-    # Default world file
-    default_world = os.path.join(pkg_rover2_gazebo, 'worlds', 'rover2_world.sdf')
-
-    # Include Gazebo launch
-    gazebo_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_rover2_gazebo, 'launch', 'gazebo.launch.py')
-        ),
-        launch_arguments={
-            'use_sim_time': use_sim_time,
-            'world': world,
-            'gui': gui,
-            'rviz': rviz,
-        }.items()
+    # Robot state publisher
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[{
+            'robot_description': robot_description,
+            'use_sim_time': False
+        }]
     )
 
-    # Optional teleop (run in separate terminal for better UX)
-    teleop_instructions = ExecuteProcess(
-        cmd=['echo', '\n\n=== To control the robot, run in another terminal: ===\nros2 run teleop_twist_keyboard teleop_twist_keyboard\n'],
+    # ros2_control controller manager
+    controller_manager = Node(
+        package='controller_manager',
+        executable='ros2_control_node',
+        parameters=[
+            {'robot_description': robot_description},
+            controller_config
+        ],
         output='screen',
-        condition=IfCondition(teleop)
+    )
+
+    # Spawn joint_state_broadcaster
+    joint_state_broadcaster_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_state_broadcaster',
+                   '-c', '/controller_manager',
+                   '-p', controller_config,
+                   '--controller-manager-timeout', '30'],
+        output='screen',
+    )
+
+    # Spawn diff_drive_controller (after joint_state_broadcaster is ready)
+    diff_drive_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['diff_drive_controller',
+                   '-c', '/controller_manager',
+                   '-p', controller_config,
+                   '--controller-manager-timeout', '30'],
+        output='screen',
+    )
+
+    delay_diff_drive = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=joint_state_broadcaster_spawner,
+            on_exit=[diff_drive_spawner],
+        )
+    )
+
+    # RViz (optional)
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', rviz_config],
+        condition=IfCondition(rviz)
     )
 
     return LaunchDescription([
         # Declare launch arguments
         DeclareLaunchArgument(
-            'use_sim_time',
-            default_value='true',
-            description='Use simulation time'
-        ),
-        DeclareLaunchArgument(
-            'world',
-            default_value=default_world,
-            description='Path to Gazebo world file'
-        ),
-        DeclareLaunchArgument(
-            'gui',
-            default_value='true',
-            description='Start Gazebo GUI'
-        ),
-        DeclareLaunchArgument(
             'rviz',
-            default_value='true',
+            default_value='false',
             description='Start RViz'
         ),
-        DeclareLaunchArgument(
-            'teleop',
-            default_value='false',
-            description='Print teleop instructions'
-        ),
 
-        # Launch
-        gazebo_launch,
-        teleop_instructions,
+        # Nodes
+        robot_state_publisher,
+        controller_manager,
+        joint_state_broadcaster_spawner,
+        delay_diff_drive,
+        rviz_node,
     ])
