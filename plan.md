@@ -56,12 +56,14 @@ The following packages have been written and need to be built and tested:
 
 | Package | Contents | Status |
 |---------|----------|--------|
-| **rover2_description/** | URDF/Xacro (base, mock, hardware variants), materials, inertia macros, RViz config, view_robot launch | Written, untested |
-| **rover2_base/** | C++ ros2_control hardware interface (rover2_hardware, gpio_motor, gpio_encoder), controller config, plugin export | Written, untested |
-| **rover2_bringup/** | Launch files (robot, mock hardware, teleop), teleop config | Written, untested |
-| **rover2_sensors/** | INA219 power monitor Python node, sensor config, sensor launch | Written, untested |
-| **scripts/hardware_tests/** | Standalone test scripts for motors, encoders, I2C, IMU, power | Written, untested |
-| **scripts/setup_pi5.sh** | Automated Pi 5 setup (installs ROS2 Jazzy + deps) | Written, untested |
+| **rover2_description/** | URDF/Xacro (base, mock, hardware variants), materials, inertia macros, RViz config, view_robot launch | Complete |
+| **rover2_base/** | C++ ros2_control hardware interface (rover2_hardware, gpio_motor, gpio_encoder with polling thread), controller config, plugin export | Complete |
+| **rover2_bringup/** | Launch files (robot, mock hardware, teleop), EKF config, teleop config | Complete |
+| **rover2_sensors/** | INA219 power monitor Python node, sensor config, sensor launch | Complete |
+| **ros2_mpu6050_driver/** | MPU6050 IMU driver (git submodule) | Complete |
+| **scripts/hardware_tests/** | Standalone test scripts for motors, encoders, I2C, IMU, power | Complete |
+| **scripts/setup_pi5.sh** | Automated Pi 5 setup (installs ROS2 Jazzy + deps) | Complete |
+| **scripts/teleop_stamped.py** | Teleop script that sends TwistStamped (required by Jazzy) | Complete |
 
 ---
 
@@ -686,12 +688,23 @@ ros2 launch rover2_bringup robot.launch.py
 
 ---
 
+## Known Issues
+
+1. **Motor vibration corrupts IMU gyro** — MPU6050 reads ~68 deg/s gyro Z noise while motors run (vs 0.65 deg/s stationary). IMU is disabled in EKF until vibration dampening is added. Mount IMU on foam/rubber standoffs to fix.
+2. **Heading drift at low speeds** — Open-loop motor control causes ~30°/m drift at 0.2 m/s due to motor asymmetry. Acceptable at 0.5 m/s (~3°/m). SLAM will correct this with LIDAR.
+3. **Closed-loop velocity control not implemented** — PI controller was attempted but encoder polling produces noisy velocity readings. Needs investigation into encoder signal quality.
+4. **Jazzy diff_drive_controller requires TwistStamped** — Standard `teleop_twist_keyboard` sends unstamped Twist which is silently ignored. Use `scripts/teleop_stamped.py` instead.
+5. **Calibration deferred** — Linear odometry is ~1% accurate (measured on blocks). On-ground calibration blocked by heading drift. Redo after SLAM or vibration dampening is added.
+6. **lgpio callbacks don't work on Pi 5** — Encoders use a polling thread instead. Works but uses CPU for busy-polling at 20kHz per encoder.
+
 ## Future Enhancements
 
-1. **SLAM**: Add `slam_toolbox` with RPLiDAR
+1. **SLAM**: Add `slam_toolbox` with RPLiDAR — will correct heading drift via scan matching
 2. **Navigation**: Integrate `nav2` stack
-3. **Computer Vision**: Add object detection nodes
-4. **Web Interface**: Create web dashboard for monitoring
+3. **IMU vibration dampening**: Mount IMU on rubber standoffs, then re-enable IMU fusion in EKF
+4. **Closed-loop velocity control**: Fix encoder noise, implement per-wheel PID to eliminate low-speed drift
+5. **Computer Vision**: Add object detection nodes
+6. **Web Interface**: Create web dashboard for monitoring
 
 ---
 
