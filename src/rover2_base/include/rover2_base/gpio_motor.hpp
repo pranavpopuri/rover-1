@@ -41,6 +41,13 @@ public:
   void setVelocity(double velocity, double max_velocity);
 
   /**
+   * @brief Set motor duty cycle and direction directly
+   * @param duty Duty cycle 0-100
+   * @param direction 1=forward, -1=backward, 0=stop
+   */
+  void setDuty(double duty, int direction);
+
+  /**
    * @brief Stop the motor (coast)
    */
   void stop();

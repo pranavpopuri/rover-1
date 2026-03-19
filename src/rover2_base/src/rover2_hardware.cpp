@@ -288,7 +288,7 @@ hardware_interface::return_type Rover2Hardware::write(
   left_encoder_->setDirection(hw_commands_[0] >= 0 ? 1 : -1);
   right_encoder_->setDirection(hw_commands_[1] >= 0 ? 1 : -1);
 
-  // Send velocity commands to motors
+  // Send velocity commands to motors (open-loop)
   left_motor_->setVelocity(hw_commands_[0], max_velocity_);
   right_motor_->setVelocity(hw_commands_[1], max_velocity_);
 

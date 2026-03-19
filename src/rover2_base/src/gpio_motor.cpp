@@ -105,6 +105,29 @@ void GPIOMotor::setVelocity(double velocity, double max_velocity)
   direction_ = new_direction;
 }
 
+void GPIOMotor::setDuty(double duty, int direction)
+{
+  if (!initialized_) return;
+
+  duty = std::min(100.0, std::max(0.0, duty));
+
+#ifdef HAS_LGPIO
+  if (direction > 0) {
+    lgGpioWrite(gpio_chip_, a_pin_, 1);
+    lgGpioWrite(gpio_chip_, b_pin_, 0);
+  } else if (direction < 0) {
+    lgGpioWrite(gpio_chip_, a_pin_, 0);
+    lgGpioWrite(gpio_chip_, b_pin_, 1);
+  } else {
+    lgGpioWrite(gpio_chip_, a_pin_, 0);
+    lgGpioWrite(gpio_chip_, b_pin_, 0);
+  }
+  lgTxPwm(gpio_chip_, pwm_pin_, PWM_FREQUENCY, duty, 0, 0);
+#endif
+
+  direction_ = direction;
+}
+
 void GPIOMotor::stop()
 {
   if (!initialized_) return;

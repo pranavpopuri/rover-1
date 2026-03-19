@@ -113,6 +113,13 @@ private:
   // Joint names
   std::vector<std::string> joint_names_;
 
+  // Per-wheel PI controller state
+  double pid_integral_[2] = {0.0, 0.0};
+  double pid_output_[2] = {0.0, 0.0};
+  static constexpr double PID_KP = 0.5;    // Proportional gain (duty % per rad/s error)
+  static constexpr double PID_KI = 0.1;    // Integral gain
+  static constexpr double PID_MAX_I = 10.0; // Anti-windup limit on integral term
+
   // Helper to parse parameters
   bool parseParameters(const hardware_interface::HardwareInfo & info);
 };
