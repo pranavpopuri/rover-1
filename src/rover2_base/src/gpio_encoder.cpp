@@ -81,7 +81,7 @@ void GPIOEncoder::pollLoop()
     if (state >= 0) {
       last_state = state;
     }
-    // Poll at ~10kHz — fast enough to catch all ticks at max motor speed
+    // Poll at ~20kHz — fast enough to catch all ticks at max motor speed
     // At 120 RPM with 1992 ticks/rotation: ~3984 edges/sec
     std::this_thread::sleep_for(std::chrono::microseconds(50));
   }

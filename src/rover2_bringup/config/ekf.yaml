@@ -35,13 +35,14 @@ ekf_filter_node:
                    false, false, false]   # x_accel, y_accel, z_accel
 
     # IMU input
-    # Only fuse yaw velocity (angular_velocity.z) from IMU, not yaw angle.
-    # The MPU6050 yaw angle drifts over time without a magnetometer.
-    # Yaw velocity is reliable and corrects heading between odometry updates.
-    imu0: /imu
-    imu0_config: [false, false, false,   # x, y, z position
-                  false, false, false,   # roll, pitch, yaw (disabled — drifts without magnetometer)
-                  false, false, false,   # x_vel, y_vel, z_vel
-                  false, false, true,    # roll_vel, pitch_vel, yaw_vel
-                  false, false, false]   # x_accel, y_accel, z_accel
-    imu0_remove_gravitational_acceleration: true
+    # DISABLED: Motor vibration causes massive gyro Z noise (~68 deg/s while
+    # driving vs 0.65 deg/s stationary). The EKF interprets this as rotation
+    # and produces wildly incorrect heading estimates.
+    # TODO: Add vibration damping or low-pass filtering before re-enabling.
+    # imu0: /imu
+    # imu0_config: [false, false, false,
+    #               false, false, false,
+    #               false, false, false,
+    #               false, false, true,
+    #               false, false, false]
+    # imu0_remove_gravitational_acceleration: true
