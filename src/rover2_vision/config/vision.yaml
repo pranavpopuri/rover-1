@@ -1,0 +1,16 @@
+detector_node:
+  ros__parameters:
+    model: "yolov8n"
+    confidence_threshold: 0.15
+    target_class: "bottle"
+    publish_rate: 5.0
+    debug_image: true
+
+follower_node:
+  ros__parameters:
+    linear_speed: 0.35
+    angular_gain: 0.003
+    stop_bbox_height: 300.0
+    linear_gain: 1.0
+    lost_timeout: 3.0
+    cmd_rate: 10.0
