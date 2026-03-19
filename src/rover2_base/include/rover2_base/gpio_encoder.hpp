@@ -3,14 +3,17 @@
 
 #include <atomic>
 #include <string>
+#include <thread>
 
 namespace rover2_base
 {
 
 /**
- * @brief GPIO-based single-phase encoder reader
+ * @brief GPIO-based single-phase encoder reader using a polling thread
  *
- * Counts rising edges on encoder pin.
+ * Counts rising edges on encoder pin by polling in a dedicated thread.
+ * lgpio callbacks do not work on Pi 5, so we poll at high frequency instead.
+ *
  * Since this is a single-phase encoder (not quadrature),
  * direction must be inferred from motor commands.
  *
@@ -23,11 +26,16 @@ public:
   ~GPIOEncoder();
 
   /**
-   * @brief Initialize GPIO pin for edge detection
+   * @brief Initialize GPIO pin and start polling thread
    * @param gpio_chip GPIO chip handle (from lgpio)
    * @return true if successful
    */
   bool init(int gpio_chip);
+
+  /**
+   * @brief Stop the polling thread
+   */
+  void stop();
 
   /**
    * @brief Get current tick count (signed, based on direction)
@@ -56,12 +64,9 @@ public:
    */
   void reset();
 
-  /**
-   * @brief Called by lgpio callback on rising edge
-   */
-  void onPulse();
-
 private:
+  void pollLoop();
+
   std::string name_;
   int pin_;
   int ticks_per_rotation_;
@@ -71,8 +76,9 @@ private:
   int64_t last_tick_count_;
   bool initialized_;
 
-  // Callback ID for lgpio
-  int callback_id_;
+  // Polling thread
+  std::thread poll_thread_;
+  std::atomic<bool> running_;
 };
 
 }  // namespace rover2_base

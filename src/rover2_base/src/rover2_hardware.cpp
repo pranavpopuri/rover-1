@@ -201,9 +201,11 @@ hardware_interface::CallbackReturn Rover2Hardware::on_activate(
 hardware_interface::CallbackReturn Rover2Hardware::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  // Stop motors
+  // Stop motors and encoder polling threads
   left_motor_->stop();
   right_motor_->stop();
+  left_encoder_->stop();
+  right_encoder_->stop();
 
   RCLCPP_INFO(rclcpp::get_logger("Rover2Hardware"), "Hardware deactivated");
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -268,7 +270,7 @@ hardware_interface::return_type Rover2Hardware::read(
 {
   double dt = period.seconds();
 
-  // Read encoder positions
+  // Read encoder positions (polling thread counts ticks in background)
   hw_positions_[0] = left_encoder_->getPosition();
   hw_positions_[1] = right_encoder_->getPosition();
 

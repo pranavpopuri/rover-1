@@ -1,5 +1,6 @@
 #include "rover2_base/gpio_encoder.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -10,19 +11,6 @@
 namespace rover2_base
 {
 
-// Global callback function for lgpio (needs C linkage)
-#ifdef HAS_LGPIO
-static void encoder_callback(int e, lgGpioAlert_p evt, void * userdata)
-{
-  (void)e;  // Unused
-  (void)evt;  // We only care that an edge occurred
-  auto encoder = static_cast<GPIOEncoder *>(userdata);
-  if (encoder) {
-    encoder->onPulse();
-  }
-}
-#endif
-
 GPIOEncoder::GPIOEncoder(const std::string & name, int pin, int ticks_per_rotation)
 : name_(name),
   pin_(pin),
@@ -32,17 +20,13 @@ GPIOEncoder::GPIOEncoder(const std::string & name, int pin, int ticks_per_rotati
   direction_(1),
   last_tick_count_(0),
   initialized_(false),
-  callback_id_(-1)
+  running_(false)
 {
 }
 
 GPIOEncoder::~GPIOEncoder()
 {
-#ifdef HAS_LGPIO
-  if (callback_id_ >= 0 && gpio_chip_ >= 0) {
-    lgCallbackCancel(callback_id_);
-  }
-#endif
+  stop();
 }
 
 bool GPIOEncoder::init(int gpio_chip)
@@ -58,20 +42,12 @@ bool GPIOEncoder::init(int gpio_chip)
     return false;
   }
 
-  // Set up edge detection callback
-  callback_id_ = lgGpioSetSamplesFunc(encoder_callback, this);
-  if (callback_id_ < 0) {
-    // Try alternate method - alert on rising edge
-    ret = lgGpioClaimAlert(gpio_chip_, 0, LG_RISING_EDGE, pin_, -1);
-    if (ret < 0) {
-      std::cerr << "[" << name_ << "] Failed to set up encoder callback: "
-                << lguErrorText(ret) << std::endl;
-      return false;
-    }
-  }
+  // Start polling thread
+  running_ = true;
+  poll_thread_ = std::thread(&GPIOEncoder::pollLoop, this);
 
   initialized_ = true;
-  std::cout << "[" << name_ << "] Encoder initialized: GPIO " << pin_
+  std::cout << "[" << name_ << "] Encoder initialized (polling thread): GPIO " << pin_
             << ", " << ticks_per_rotation_ << " ticks/rotation" << std::endl;
   return true;
 #else
@@ -80,6 +56,35 @@ bool GPIOEncoder::init(int gpio_chip)
             << ", " << ticks_per_rotation_ << " ticks/rotation" << std::endl;
   initialized_ = true;
   return true;
+#endif
+}
+
+void GPIOEncoder::stop()
+{
+  running_ = false;
+  if (poll_thread_.joinable()) {
+    poll_thread_.join();
+  }
+}
+
+void GPIOEncoder::pollLoop()
+{
+#ifdef HAS_LGPIO
+  int last_state = lgGpioRead(gpio_chip_, pin_);
+
+  while (running_) {
+    int state = lgGpioRead(gpio_chip_, pin_);
+    if (state >= 0 && state == 1 && last_state == 0) {
+      // Rising edge detected
+      tick_count_.fetch_add(direction_.load());
+    }
+    if (state >= 0) {
+      last_state = state;
+    }
+    // Poll at ~10kHz — fast enough to catch all ticks at max motor speed
+    // At 120 RPM with 1992 ticks/rotation: ~3984 edges/sec
+    std::this_thread::sleep_for(std::chrono::microseconds(50));
+  }
 #endif
 }
 
@@ -115,12 +120,6 @@ void GPIOEncoder::reset()
 {
   tick_count_.store(0);
   last_tick_count_ = 0;
-}
-
-void GPIOEncoder::onPulse()
-{
-  // Add tick in current direction
-  tick_count_.fetch_add(direction_.load());
 }
 
 }  // namespace rover2_base
