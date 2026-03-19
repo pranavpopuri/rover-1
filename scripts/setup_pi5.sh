@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Rover2 Pi 5 Setup Script
-# Installs ROS2 Humble and all dependencies for Viam Rover 2
+# Installs ROS2 Jazzy and all dependencies for Viam Rover 2
 #
 # Usage:
 #   chmod +x setup_pi5.sh
@@ -9,7 +9,7 @@
 #
 # Requirements:
 #   - Raspberry Pi 5
-#   - Ubuntu 22.04 (Jammy)
+#   - Ubuntu 24.04 (Noble)
 #   - Internet connection
 #   - ~30 minutes for full installation
 #
@@ -37,8 +37,8 @@ fi
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     echo "OS: $PRETTY_NAME"
-    if [ "$VERSION_CODENAME" != "jammy" ]; then
-        echo "Warning: Expected Ubuntu 22.04 (jammy), got $VERSION_CODENAME"
+    if [ "$VERSION_CODENAME" != "noble" ]; then
+        echo "Warning: Expected Ubuntu 24.04 (noble), got $VERSION_CODENAME"
         read -p "Continue anyway? (y/N) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -49,7 +49,7 @@ fi
 
 echo ""
 echo "This script will install:"
-echo "  - ROS2 Humble (ros-humble-ros-base)"
+echo "  - ROS2 Jazzy (ros-jazzy-ros-base)"
 echo "  - ros2_control and ros2_controllers"
 echo "  - Hardware dependencies (lgpio, smbus2, i2c-tools)"
 echo "  - USB camera support"
@@ -85,16 +85,16 @@ else
 fi
 
 # ============================================================
-# STEP 3: Install ROS2 Humble
+# STEP 3: Install ROS2 Jazzy
 # ============================================================
 echo ""
 echo "============================================================"
-echo "STEP 3/6: Installing ROS2 Humble..."
+echo "STEP 3/6: Installing ROS2 Jazzy..."
 echo "============================================================"
 
 # Check if ROS2 is already installed
-if [ -d /opt/ros/humble ]; then
-    echo "ROS2 Humble already installed"
+if [ -d /opt/ros/jazzy ]; then
+    echo "ROS2 Jazzy already installed"
 else
     # Install prerequisites
     sudo apt install -y software-properties-common curl
@@ -108,7 +108,7 @@ else
 
     # Update and install ROS2
     sudo apt update
-    sudo apt install -y ros-humble-ros-base
+    sudo apt install -y ros-jazzy-ros-base
 fi
 
 # ============================================================
@@ -120,13 +120,13 @@ echo "STEP 4/6: Installing ROS2 packages..."
 echo "============================================================"
 
 sudo apt install -y \
-    ros-humble-ros2-control \
-    ros-humble-ros2-controllers \
-    ros-humble-xacro \
-    ros-humble-robot-state-publisher \
-    ros-humble-joint-state-publisher \
-    ros-humble-usb-cam \
-    ros-humble-teleop-twist-keyboard \
+    ros-jazzy-ros2-control \
+    ros-jazzy-ros2-controllers \
+    ros-jazzy-xacro \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-usb-cam \
+    ros-jazzy-teleop-twist-keyboard \
     python3-colcon-common-extensions \
     python3-rosdep
 
@@ -173,10 +173,10 @@ echo "Setting up shell environment..."
 echo "============================================================"
 
 # Add ROS2 sourcing to bashrc if not already there
-if ! grep -q "source /opt/ros/humble/setup.bash" ~/.bashrc; then
+if ! grep -q "source /opt/ros/jazzy/setup.bash" ~/.bashrc; then
     echo "" >> ~/.bashrc
-    echo "# ROS2 Humble" >> ~/.bashrc
-    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+    echo "# ROS2 Jazzy" >> ~/.bashrc
+    echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
     echo "Added ROS2 sourcing to ~/.bashrc"
 else
     echo "ROS2 sourcing already in ~/.bashrc"
