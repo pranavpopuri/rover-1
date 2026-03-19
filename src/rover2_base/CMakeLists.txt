@@ -14,7 +14,9 @@ find_package(pluginlib REQUIRED)
 find_package(controller_manager REQUIRED)
 
 # Check for lgpio library (Pi 5 GPIO)
-find_library(LGPIO_LIBRARY lgpio)
+find_library(LGPIO_LIBRARY lgpio
+  PATHS /usr/lib /usr/lib/aarch64-linux-gnu
+)
 if(LGPIO_LIBRARY)
   message(STATUS "Found lgpio: ${LGPIO_LIBRARY}")
   add_definitions(-DHAS_LGPIO)

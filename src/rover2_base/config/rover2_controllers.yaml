@@ -57,12 +57,13 @@ diff_drive_controller:
     cmd_vel_timeout: 0.5  # seconds
 
     # Feedback configuration
+    # open_loop: true passes velocity commands directly to hardware.
+    # Odometry is computed from encoder feedback regardless of this setting.
+    # With open_loop: false, a PID loop controls wheel velocity, but this
+    # creates a chicken-and-egg problem: encoders need motor power to generate
+    # signals, but the PID won't command motors without encoder feedback.
     position_feedback: true
-    # Set open_loop to false for real hardware (uses encoder feedback)
-    # Mock hardware doesn't integrate position, so odom stays at zero in mock mode.
-    # This is expected — the pipeline test confirms controllers load, topics publish,
-    # and cmd_vel is received. Real encoders will provide actual position feedback.
-    open_loop: false
+    open_loop: true
 
     # Topic remapping (Jazzy namespaces by default)
     use_stamped_vel: false
