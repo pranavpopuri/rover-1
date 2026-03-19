@@ -1,0 +1,47 @@
+# EKF configuration for fusing wheel odometry + IMU
+# Uses robot_localization package
+#
+# Fuses:
+#   - /diff_drive_controller/odom: x/y velocity from wheel encoders
+#   - /imu: yaw angle and angular velocity from MPU6050
+#
+# Outputs:
+#   - /odometry/filtered: corrected odometry with IMU heading
+#   - TF: odom -> base_link (if publish_tf is true)
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    sensor_timeout: 0.1
+    two_d_mode: true
+
+    # Frame configuration
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # TF publishing
+    publish_tf: true
+    publish_acceleration: false
+
+    # Wheel odometry input
+    # Use x/y velocity from wheels (not position — open_loop position drifts)
+    odom0: /diff_drive_controller/odom
+    odom0_config: [false, false, false,   # x, y, z position
+                   false, false, false,   # roll, pitch, yaw
+                   true,  true,  false,   # x_vel, y_vel, z_vel
+                   false, false, false,   # roll_vel, pitch_vel, yaw_vel
+                   false, false, false]   # x_accel, y_accel, z_accel
+
+    # IMU input
+    # Only fuse yaw velocity (angular_velocity.z) from IMU, not yaw angle.
+    # The MPU6050 yaw angle drifts over time without a magnetometer.
+    # Yaw velocity is reliable and corrects heading between odometry updates.
+    imu0: /imu
+    imu0_config: [false, false, false,   # x, y, z position
+                  false, false, false,   # roll, pitch, yaw (disabled — drifts without magnetometer)
+                  false, false, false,   # x_vel, y_vel, z_vel
+                  false, false, true,    # roll_vel, pitch_vel, yaw_vel
+                  false, false, false]   # x_accel, y_accel, z_accel
+    imu0_remove_gravitational_acceleration: true

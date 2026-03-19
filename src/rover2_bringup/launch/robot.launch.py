@@ -4,7 +4,9 @@ Main launch file for Rover2 on real hardware (Raspberry Pi 5).
 
 Launches:
   - robot_state_publisher (URDF)
-  - ros2_control controller_manager (auto-loads controllers from YAML)
+  - ros2_control controller_manager
+  - MPU6050 IMU driver
+  - robot_localization EKF (fuses odometry + IMU)
   - INA219 power monitor (optional)
 
 Usage:
@@ -27,10 +29,14 @@ def generate_launch_description():
     # Get package directories
     pkg_description = get_package_share_directory('rover2_description')
     pkg_base = get_package_share_directory('rover2_base')
+    pkg_bringup = get_package_share_directory('rover2_bringup')
+    pkg_imu = get_package_share_directory('mpu6050driver')
 
     # Paths
     urdf_file = os.path.join(pkg_description, 'urdf', 'rover2_hardware.urdf.xacro')
     controller_config = os.path.join(pkg_base, 'config', 'rover2_controllers.yaml')
+    ekf_config = os.path.join(pkg_bringup, 'config', 'ekf.yaml')
+    imu_config = os.path.join(pkg_imu, 'params', 'mpu6050.yaml')
 
     # Process xacro
     robot_description = xacro.process_file(urdf_file).toxml()
@@ -52,7 +58,6 @@ def generate_launch_description():
     )
 
     # ros2_control controller manager
-    # Controllers are auto-loaded and activated from the YAML config
     controller_manager = Node(
         package='controller_manager',
         executable='ros2_control_node',
@@ -89,6 +94,25 @@ def generate_launch_description():
         )
     )
 
+    # MPU6050 IMU driver
+    imu_node = Node(
+        package='mpu6050driver',
+        executable='mpu6050driver',
+        name='mpu6050driver',
+        output='screen',
+        parameters=[imu_config],
+    )
+
+    # EKF for sensor fusion (odometry + IMU)
+    # Disable odom TF from diff_drive_controller since EKF will publish it
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[ekf_config],
+    )
+
     # INA219 power monitor (optional)
     power_monitor = Node(
         package='rover2_sensors',
@@ -122,5 +146,7 @@ def generate_launch_description():
         controller_manager,
         joint_state_broadcaster_spawner,
         delay_diff_drive,
+        imu_node,
+        ekf_node,
         power_monitor,
     ])

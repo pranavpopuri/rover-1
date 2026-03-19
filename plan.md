@@ -397,56 +397,110 @@ Test with wheels off the ground before driving on the floor:
 
 ---
 
-### Phase 6: Calibration & Validation
+### Phase 6: Camera Integration
 
 **Power: Robot battery via ribbon cable.**
 
-**Goal:** Tune odometry parameters so software matches physical reality, then run integration tests.
+**Goal:** Get USB camera streaming as a ROS2 topic.
 
-#### 6a: Linear Calibration
+**Tasks:**
+1. Connect USB camera to the Pi
+2. Verify the camera is detected:
+   ```bash
+   v4l2-ctl --list-devices
+   ls /dev/video*
+   ```
+3. Launch the camera node:
+   ```bash
+   ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:=/dev/video0
+   ```
+4. Verify image topic:
+   ```bash
+   ros2 topic hz /image_raw
+   ```
+5. Save a test frame to verify orientation:
+   ```bash
+   ros2 run usb_cam usb_cam_node_exe &
+   ros2 topic echo /image_raw --once | head -5  # or save with cv2
+   ```
+
+**Deliverables:**
+- [ ] Camera detected at `/dev/video*`
+- [ ] `/image_raw` publishes at expected rate
+- [ ] Image is right-side up and not mirrored
+
+---
+
+### Phase 7: Sensor Fusion (IMU + Odometry EKF)
+
+**Power: Robot battery via ribbon cable.**
+
+**Goal:** Use `robot_localization` EKF to fuse IMU heading with wheel odometry. This corrects the heading drift caused by open-loop motor control and asymmetric wheel speeds.
+
+**Why this is needed:** On-ground testing showed ~10° heading drift over 1m of forward travel. Without heading correction, odometry calibration is unreliable and the robot cannot drive straight.
+
+**Tasks:**
+1. Install robot_localization:
+   ```bash
+   sudo apt install -y ros-jazzy-robot-localization
+   ```
+2. Create EKF config file (`rover2_bringup/config/ekf.yaml`):
+   - Fuse `/diff_drive_controller/odom` (x, y velocity from wheels)
+   - Fuse `/imu` (yaw angle/velocity from IMU)
+   - Output: `/odometry/filtered` with corrected heading
+3. Add EKF node to `robot.launch.py`
+4. Verify filtered odometry corrects heading drift:
+   - Drive forward 1m — heading should stay near 0°
+   - Compare `/diff_drive_controller/odom` (drifts) vs `/odometry/filtered` (corrected)
+
+**Deliverables:**
+- [ ] EKF node running and publishing `/odometry/filtered`
+- [ ] Heading drift significantly reduced when driving straight
+- [ ] TF tree: `odom → base_link` now comes from EKF, not raw wheel odometry
+
+---
+
+### Phase 8: Calibration & Validation
+
+**Power: Robot battery via ribbon cable.**
+
+**Goal:** With sensor fusion correcting heading, tune odometry parameters and run integration tests.
+
+#### 8a: Linear Calibration
 
 1. Mark a 1m line on the floor
-2. Command the robot to drive forward:
-   ```bash
-   ros2 topic pub /diff_drive_controller/cmd_vel geometry_msgs/Twist "{linear: {x: 0.1}}"
-   ```
-3. Stop when odometry reports 1m traveled
-4. Measure actual distance with tape measure
-5. Adjust: `wheel_radius = wheel_radius * (odometry_distance / actual_distance)`
-6. Rebuild, repeat until error < 2%
+2. Drive forward using the teleop script until odometry reports 1m
+3. Measure actual distance with tape measure
+4. Adjust: `wheel_radius = wheel_radius * (odometry_distance / actual_distance)`
+5. Rebuild, repeat until error < 2%
 
 - [ ] Robot reports 1m, actually travels 1m (±2 cm)
 
-#### 6b: Rotational Calibration
+#### 8b: Rotational Calibration
 
 1. Mark robot's heading on the floor
-2. Command a 360° rotation:
-   ```bash
-   ros2 topic pub /diff_drive_controller/cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}"
-   ```
-3. Stop when odometry reports 360° (2π rad)
-4. Measure actual rotation
-5. Adjust: `wheel_separation = wheel_separation * (actual_angle / commanded_angle)`
-6. Rebuild, repeat until error < 5°
+2. Command a 360° rotation using teleop
+3. Measure actual rotation
+4. Adjust: `wheel_separation = wheel_separation * (actual_angle / commanded_angle)`
+5. Rebuild, repeat until error < 5°
 
 - [ ] Robot reports 360°, actually rotates 360° (±5°)
 
-#### 6c: Integration Tests
+#### 8c: Integration Tests
 
 | Test | Procedure | Pass Criteria |
 |------|-----------|---------------|
-| Drive straight 2m | Command 0.2 m/s, stop at 2m odometry | Lateral drift < 5 cm |
+| Drive straight 2m | Teleop forward, stop at 2m odometry | Lateral drift < 5 cm |
 | Drive square (1m sides) | Four 1m straights with 90° turns | Returns within 10 cm of start |
 | Emergency stop | Drive forward, release keys | Stops within `cmd_vel_timeout` (0.5s) |
-| Mock vs real | Run same commands in mock hardware and on real hardware | Odometry values within 10% |
-| IMU + odometry agreement | Drive forward, check IMU shows ~0 angular velocity | No large disagreement |
+| IMU + odometry agreement | Drive forward, check filtered odom heading stays ~0° | Heading drift < 2° per meter |
 
 **Deliverables:**
 - [ ] Linear odometry accurate to ±2%
 - [ ] Rotational odometry accurate to ±5°
 - [ ] Square test returns within 10 cm of start
 - [ ] Emergency stop works reliably
-- [ ] Mock hardware and real hardware behavior agree within 10%
+- [ ] Heading drift corrected by sensor fusion
 
 ---
 
@@ -636,9 +690,8 @@ ros2 launch rover2_bringup robot.launch.py
 
 1. **SLAM**: Add `slam_toolbox` with RPLiDAR
 2. **Navigation**: Integrate `nav2` stack
-3. **Sensor Fusion**: Use `robot_localization` for IMU+odometry EKF
-4. **Computer Vision**: Add object detection nodes
-5. **Web Interface**: Create web dashboard for monitoring
+3. **Computer Vision**: Add object detection nodes
+4. **Web Interface**: Create web dashboard for monitoring
 
 ---
 
